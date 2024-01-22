@@ -13,6 +13,7 @@ import org.matsim.core.config.ConfigUtils;
 import org.matsim.core.controler.Controler;
 import org.matsim.core.scenario.ScenarioUtils;
 import org.sinfonica.inclusive_ccam.heterogenous_users.drt.UserSpecificStopTimeModule;
+import org.sinfonica.inclusive_ccam.heterogenous_users.drt.UserSpecificStopTimeProvider;
 
 import java.util.Random;
 import java.util.Set;
@@ -26,6 +27,7 @@ public class RunSimulation {
                 .allowOptions("random-seed")
                 .allowOptions("vulnerable-probability")
                 .allowOptions("vulnerable-time")
+                .allowOptions("fair-costs")
                 .build();
 
         String configPath = commandLine.getOptionStrict("config-path");
@@ -49,6 +51,7 @@ public class RunSimulation {
 
         double vulnerableProbability = commandLine.hasOption("vulnerable-probability") ? Double.parseDouble(commandLine.getOptionStrict("vulnerable-probability")): 0;
         double vulnerableTime = commandLine.hasOption("vulnerable-time") ? Double.parseDouble(commandLine.getOptionStrict("vulnerable-time")) : 120.0;
+        //boolean fairCosts = commandLine.hasOption("fair-costs") && Boolean.parseBoolean(commandLine.getOptionStrict("fair-costs"));
 
         Random random = new Random(randomSeed);
         scenario.getPopulation().getPersons().values().forEach(p -> {
@@ -66,6 +69,15 @@ public class RunSimulation {
 
         drtModes.forEach(mode -> {
             controler.addOverridingModule(new UserSpecificStopTimeModule(mode));
+        });
+
+        drtModes.forEach(mode -> {
+            controler.addOverridingQSimModule(new AbstractDvrpModeQSimModule(mode) {
+                @Override
+                protected void configureQSim() {
+                    bindModal(UserSpecificStopTimeProvider.class).to(UserSpecificStopTimeProvider.class);
+                }
+            });
         });
 
         controler.configureQSimComponents( DvrpQSimComponents.activateAllModes((MultiModal<?>) config.getModules().get(MultiModeDrtConfigGroup.GROUP_NAME)));
