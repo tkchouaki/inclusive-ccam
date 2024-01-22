@@ -12,7 +12,7 @@
         <maven.compiler.source>17</maven.compiler.source>
         <maven.compiler.target>17</maven.compiler.target>
         <project.build.sourceEncoding>UTF-8</project.build.sourceEncoding>
-        <matsim.version>16.0-2023w51</matsim.version>
+        <matsim.version>16.0-PR3034</matsim.version>
     </properties>
 
 
@@ -71,6 +71,12 @@
         <dependency>
             <groupId>org.matsim.contrib</groupId>
             <artifactId>drt</artifactId>
+            <version>${matsim.version}</version>
+        </dependency>
+
+        <dependency>
+            <groupId>org.matsim.contrib</groupId>
+            <artifactId>drt-extensions</artifactId>
             <version>${matsim.version}</version>
         </dependency>
 
