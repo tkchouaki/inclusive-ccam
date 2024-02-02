@@ -79,6 +79,12 @@
             <artifactId>drt-extensions</artifactId>
             <version>${matsim.version}</version>
         </dependency>
+        
+        <dependency>
+            <groupId>org.matsim.alonso-mora</groupId>
+            <artifactId>core</artifactId>
+            <version>1.0.0</version>
+        </dependency>
 
         <dependency>
             <groupId>junit</groupId>
