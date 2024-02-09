@@ -14,8 +14,6 @@ public class UserSpecificStopTimeModule extends AbstractDvrpModeModule {
     @Override
     public void install() {
         bindModal(PassengerStopDurationProvider.class).to(UserSpecificStopTimeProvider.class);
-        // bindModal(ParallelStopTimeCalculator.class).toProvider(modalProvider(getter -> new ParallelStopTimeCalculator(getter.getModal(PassengerStopDurationProvider.class))));
-        // bindModal(StopTimeCalculator.class).to(modalKey(ParallelStopTimeCalculator.class));
     }
 
 }
