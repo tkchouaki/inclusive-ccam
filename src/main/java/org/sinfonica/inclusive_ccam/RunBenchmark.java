@@ -10,25 +10,27 @@ public class RunBenchmark {
                 .requireOptions("config-path")
                 .build();
 
-        boolean[] useAlonsoMoraValues = new boolean[] {true, false};
-        double[] vulnerableProbabilities = new double[]{0, 0.1, 0.2, 0.3, 0.4, 0.5, 0.6, 0.7, 0.8, 0.9, 1};
-        int[] vulnerableInteractionTimes = new int[]{120, 180, 240, 300};
+        int[] fleetSizes = new int[] { 25, 50, 75, 150, 150, 250, 350, 450 };
+        boolean[] useAlonsoMoraValues = new boolean[] {true}; //, false};
+        double[] vulnerableProbabilities = new double[]{ 0.5 }; // 0.0, 0.1, 0.2, 0.3, 0.4, 0.5, 0.6, 0.7, 0.8, 0.9, 1.0};
+        int[] vulnerableInteractionTimes = new int[]{ 120, 240 }; // , 180, 240, 300};
 
-        for(double probability: vulnerableProbabilities) {
-            String probabilityString = String.format(String.format(Locale.US, "%.1f", probability));
-            for(int vulnerableTime: vulnerableInteractionTimes) {
-            	for (boolean useAlonsoMora : useAlonsoMoraValues) {
-	                String timeString = String.format(Locale.US, "%d", vulnerableTime);
-	                RunSimulation.main(new String[]{
-	                        "--config-path", commandLine.getOptionStrict("config-path"),
-	                        "--vulnerable-probability", probabilityString,
-	                        "--vulnerable-time", timeString,
-	                        "--config:controler.outputDirectory", String.format("outputs/output_%s_%s_%s", probabilityString, timeString, String.valueOf(useAlonsoMora)),
-	                        "--config:controler.lastIteration", "0",
-	                        "--use-alonso-mora", String.valueOf(useAlonsoMora)
-	                });
-            	}
-            }
+        for (int fleetSize : fleetSizes) {
+	        for(double probability: vulnerableProbabilities) {
+	            for(int vulnerableTime: vulnerableInteractionTimes) {
+	            	for (boolean useAlonsoMora : useAlonsoMoraValues) {
+		                RunSimulation.main(new String[]{
+		                        "--config-path", commandLine.getOptionStrict("config-path"),
+		                        "--vulnerable-probability", String.valueOf(probability),
+		                        "--vulnerable-time", String.valueOf(vulnerableTime),
+		                        "--config:controler.outputDirectory", String.format("outputs/fs%s_vs%s_vt%s_%s", String.valueOf(fleetSize), String.valueOf(probability), String.valueOf(vulnerableTime), useAlonsoMora ? "am2" : "drt"),
+		                        "--config:controler.lastIteration", "0",
+		                        "--fleet-size", String.valueOf(fleetSize),
+		                        "--use-alonso-mora", String.valueOf(useAlonsoMora)
+		                });
+	            	}
+	            }
+	        }
         }
 
     }

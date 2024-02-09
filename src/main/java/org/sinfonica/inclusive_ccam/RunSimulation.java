@@ -12,11 +12,16 @@ import org.matsim.alonso_mora.AlonsoMoraConfigGroup.SequenceGeneratorType;
 import org.matsim.alonso_mora.AlonsoMoraConfigurator;
 import org.matsim.alonso_mora.MultiModeAlonsoMoraConfigGroup;
 import org.matsim.api.core.v01.Scenario;
+import org.matsim.api.core.v01.network.Link;
+import org.matsim.api.core.v01.network.Network;
 import org.matsim.api.core.v01.population.Leg;
+import org.matsim.contrib.drt.optimizer.insertion.DetourTimeEstimator;
+import org.matsim.contrib.drt.prebooking.PrebookingParams;
 import org.matsim.contrib.drt.routing.DrtRoute;
 import org.matsim.contrib.drt.routing.DrtRouteFactory;
 import org.matsim.contrib.drt.run.MultiModeDrtConfigGroup;
 import org.matsim.contrib.drt.run.MultiModeDrtModule;
+import org.matsim.contrib.dvrp.path.VrpPaths;
 import org.matsim.contrib.dvrp.run.AbstractDvrpModeQSimModule;
 import org.matsim.contrib.dvrp.run.DvrpConfigGroup;
 import org.matsim.contrib.dvrp.run.DvrpModule;
@@ -27,6 +32,10 @@ import org.matsim.core.config.Config;
 import org.matsim.core.config.ConfigUtils;
 import org.matsim.core.config.groups.ReplanningConfigGroup.StrategySettings;
 import org.matsim.core.controler.Controler;
+import org.matsim.core.router.speedy.SpeedyALTFactory;
+import org.matsim.core.router.util.LeastCostPathCalculator;
+import org.matsim.core.router.util.TravelDisutility;
+import org.matsim.core.router.util.TravelTime;
 import org.matsim.core.scenario.ScenarioUtils;
 import org.sinfonica.inclusive_ccam.heterogenous_users.drt.UserSpecificStopTimeModule;
 import org.sinfonica.inclusive_ccam.heterogenous_users.drt.UserSpecificStopTimeProvider;
@@ -40,6 +49,7 @@ public class RunSimulation {
                 .allowOptions("vulnerable-probability")
                 .allowOptions("vulnerable-time")
                 .allowOptions("fair-costs")
+                .allowOptions("fleet-size")
                 .allowOptions("use-alonso-mora")
                 .build();
 
@@ -60,6 +70,15 @@ public class RunSimulation {
 
         MultiModeDrtConfigGroup multiModeDrtConfigGroup = (MultiModeDrtConfigGroup) config.getModules().get(MultiModeDrtConfigGroup.GROUP_NAME);
         Set<String> drtModes = multiModeDrtConfigGroup.modes().collect(Collectors.toSet());
+        
+        int fleetSize = commandLine.getOption("fleet-size").map(Integer::parseInt).orElse(100);
+        
+        multiModeDrtConfigGroup.getModalElements().forEach(item -> {
+        	item.vehiclesFile = "drt_vehicles_" + fleetSize + ".xml.gz";
+        	item.addParameterSet(new PrebookingParams());
+        	
+        	
+        });
 
         Scenario scenario = ScenarioUtils.createScenario(config);
         scenario.getPopulation().getFactory().getRouteFactories().setRouteFactory(DrtRoute.class, new DrtRouteFactory());
@@ -98,6 +117,23 @@ public class RunSimulation {
                 @Override
                 protected void configureQSim() {
                     bindModal(UserSpecificStopTimeProvider.class).to(UserSpecificStopTimeProvider.class);
+                    
+                    bindModal(DetourTimeEstimator.class).toProvider(modalProvider(getter -> {
+                    	TravelTime travelTime = getter.getModal(TravelTime.class);
+                    	TravelDisutility travelDisutility = getter.getModal(TravelDisutility.class);
+                    	Network network = getter.getModal(Network.class);
+                    	
+                    	LeastCostPathCalculator router = new SpeedyALTFactory().createPathCalculator(network, travelDisutility, travelTime);
+                    
+                    	return new DetourTimeEstimator() {
+							
+							@Override
+							public double estimateTime(Link from, Link to, double departureTime) {
+								var path = VrpPaths.calcAndCreatePath(from, to, departureTime, router, travelTime);
+								return path.getTravelTime();
+							}
+						};
+                    }));
                 }
             });
         });
