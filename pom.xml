@@ -21,6 +21,10 @@
             <id>matsim</id>
             <url>https://repo.matsim.org/repository/matsim</url>
         </repository>
+        <repository>
+            <id>irtx-gitlab</id>
+            <url>https://git.irt-systemx.fr/api/v4/projects/5623/packages/maven</url>
+        </repository>
     </repositories>
 
 
@@ -78,6 +82,12 @@
             <groupId>org.matsim.contrib</groupId>
             <artifactId>drt-extensions</artifactId>
             <version>${matsim.version}</version>
+        </dependency>
+        
+        <dependency>
+            <groupId>org.matsim.alonso-mora</groupId>
+            <artifactId>core</artifactId>
+            <version>1.0.0-irtx-SNAPSHOT</version>
         </dependency>
 
         <dependency>
