@@ -52,7 +52,10 @@ public class RunSimulation {
                 .allowOptions("prebook-vulnerable", "prebooking-probability")
                 .build();
 
-        if(commandLine.hasOption("prebook-vulnerable") && commandLine.hasOption("prebooking-probability")) {
+        double prebookingProbability = commandLine.hasOption("prebooking-probability") ? Double.parseDouble(commandLine.getOptionStrict("prebooking-probability")) : -1;
+        boolean prebookVulnerable = commandLine.hasOption("prebook-vulnerable") && Boolean.parseBoolean(commandLine.getOptionStrict("prebook-vulnerable"));
+
+        if(prebookingProbability > 0 && prebookVulnerable) {
             throw new IllegalStateException("'prebook-vulnerable' and 'prebooking-probability' arguments cannot be used at once");
         }
 
@@ -97,12 +100,7 @@ public class RunSimulation {
 
         double vulnerableProbability = commandLine.hasOption("vulnerable-probability") ? Double.parseDouble(commandLine.getOptionStrict("vulnerable-probability")): 0;
         double vulnerableTime = commandLine.hasOption("vulnerable-time") ? Double.parseDouble(commandLine.getOptionStrict("vulnerable-time")) : 120.0;
-        //double prebookingProbability = commandLine.hasOption("prebooking-probability") ? Double.parseDouble(commandLine.getOptionStrict("prebooking-probability")) : -1;
-        //boolean prebookVulnerable = commandLine.hasOption("prebook-vulnerable") && Boolean.parseBoolean(commandLine.getOptionStrict("prebook-vulnerable"));
 
-        final boolean prebookVulnerable = false;
-        final double prebookingProbability = 0.0;
-        
         Random random = new Random(randomSeed);
         scenario.getPopulation().getPersons().values().forEach(p -> {
             Double drtInteractionTime = 60.0;
