@@ -28,7 +28,7 @@ public class UserSpecificStopTimeProvider implements PassengerStopDurationProvid
 
     @Override
     public double calcDropoffDuration(DvrpVehicle dvrpVehicle, DrtRequest drtRequest) {
-        return 0.0; // this.calcStopDuration(drtRequest.getPassengerIds());
+        return this.calcStopDuration(drtRequest.getPassengerIds());
     }
 
     public double calcStopDuration(Collection<Id<Person>> passengers) {

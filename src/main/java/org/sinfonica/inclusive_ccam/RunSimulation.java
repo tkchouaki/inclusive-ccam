@@ -17,6 +17,7 @@ import org.matsim.api.core.v01.network.Network;
 import org.matsim.api.core.v01.population.Leg;
 import org.matsim.contrib.drt.optimizer.insertion.DetourTimeEstimator;
 import org.matsim.contrib.drt.prebooking.PrebookingParams;
+import org.matsim.contrib.drt.prebooking.logic.PersonBasedPrebookingLogic;
 import org.matsim.contrib.drt.routing.DrtRoute;
 import org.matsim.contrib.drt.routing.DrtRouteFactory;
 import org.matsim.contrib.drt.run.MultiModeDrtConfigGroup;
@@ -48,7 +49,12 @@ public class RunSimulation {
                 .allowOptions("fair-costs")
                 .allowOptions("fleet-size")
                 .allowOptions("use-alonso-mora")
+                .allowOptions("prebook-vulnerable", "prebooking-probability")
                 .build();
+
+        if(commandLine.hasOption("prebook-vulnerable") && commandLine.hasOption("prebooking-probability")) {
+            throw new IllegalStateException("'prebook-vulnerable' and 'prebooking-probability' arguments cannot be used at once");
+        }
 
         String configPath = commandLine.getOptionStrict("config-path");
         Integer randomSeed = commandLine.hasOption("random-seed") ? Integer.parseInt(commandLine.getOptionStrict("random-seed")) : 1234;
@@ -74,9 +80,6 @@ public class RunSimulation {
         multiModeDrtConfigGroup.getModalElements().forEach(item -> {
         	item.vehiclesFile = "drt_vehicles_" + fleetSize + ".xml.gz";
         	item.addParameterSet(new PrebookingParams());
-        	
-        	item.removeParameterSet(item.getRebalancingParams().get());
-        	
         });
 
         Scenario scenario = ScenarioUtils.createScenario(config);
@@ -89,19 +92,37 @@ public class RunSimulation {
                 .filter(l -> drtModes.contains(l.getMode()))
                 .forEach(l -> l.setRoute(null));
         
+        // avoid two links connecting the same nodes
         new NetworkSegmentDoubleLinks().run(scenario.getNetwork());
 
         double vulnerableProbability = commandLine.hasOption("vulnerable-probability") ? Double.parseDouble(commandLine.getOptionStrict("vulnerable-probability")): 0;
         double vulnerableTime = commandLine.hasOption("vulnerable-time") ? Double.parseDouble(commandLine.getOptionStrict("vulnerable-time")) : 120.0;
-        //boolean fairCosts = commandLine.hasOption("fair-costs") && Boolean.parseBoolean(commandLine.getOptionStrict("fair-costs"));
+        //double prebookingProbability = commandLine.hasOption("prebooking-probability") ? Double.parseDouble(commandLine.getOptionStrict("prebooking-probability")) : -1;
+        //boolean prebookVulnerable = commandLine.hasOption("prebook-vulnerable") && Boolean.parseBoolean(commandLine.getOptionStrict("prebook-vulnerable"));
 
+        final boolean prebookVulnerable = false;
+        final double prebookingProbability = 0.0;
+        
         Random random = new Random(randomSeed);
         scenario.getPopulation().getPersons().values().forEach(p -> {
             Double drtInteractionTime = 60.0;
+            boolean prebook = false;
             if(random.nextDouble() <= vulnerableProbability) {
                 drtInteractionTime = vulnerableTime;
+                prebook = prebookVulnerable;
+            }
+            if(prebookingProbability >=0) {
+                if(random.nextDouble() <= prebookingProbability) {
+                    prebook = true;
+                }
             }
             p.getAttributes().putAttribute("drtInteractionTime", drtInteractionTime);
+            if(prebook){
+                drtModes.forEach(mode -> p.getAttributes().putAttribute(PersonBasedPrebookingLogic.getPersonAttribute(mode), true));
+            } else {
+                drtModes.forEach(mode -> p.getAttributes().putAttribute(PersonBasedPrebookingLogic.getPersonAttribute(mode), false));
+            }
+
         });
 
 
@@ -160,8 +181,7 @@ public class RunSimulation {
 			GlpkMpsAssignmentParameters assignmentParameters = new GlpkMpsAssignmentParameters();
 			amConfig.addParameterSet(assignmentParameters);
 
-			/*GlpkMpsRelocationParameters relocationParameters = new GlpkMpsRelocationParameters();
-			amConfig.addParameterSet(relocationParameters);*/
+			// disable AM in-house relocation
 			amConfig.relocationInterval = 0;
 
 			MatrixEstimatorParameters estimator = new MatrixEstimatorParameters();
@@ -169,6 +189,8 @@ public class RunSimulation {
 
 			AlonsoMoraConfigurator.configure(controler, amConfig.mode);
 		}
+
+        multiModeDrtConfigGroup.getModalElements().forEach(drtConfigGroup -> PersonBasedPrebookingLogic.install(controler, drtConfigGroup, 4*3600));
 
         controler.configureQSimComponents( DvrpQSimComponents.activateAllModes((MultiModal<?>) config.getModules().get(MultiModeDrtConfigGroup.GROUP_NAME)));
         controler.run();
