@@ -186,7 +186,8 @@ public class DrtConfigGroup extends ReflectiveConfigGroupWithConfigurableParamet
 	public boolean storeUnsharedPath = false; // If true, the planned unshared path is stored and exported in plans
 
 	@Parameter
-	public boolean useFairCosts = false;
+	@Positive
+	public int dispatchInterval = 1;
 
 	@NotNull
 	private DrtInsertionSearchParams drtInsertionSearchParams;

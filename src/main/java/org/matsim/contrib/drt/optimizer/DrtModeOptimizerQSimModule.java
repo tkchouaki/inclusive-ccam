@@ -61,8 +61,6 @@ import org.matsim.core.modal.ModalProviders;
 import org.matsim.core.router.costcalculators.TravelDisutilityFactory;
 import org.matsim.core.router.util.TravelDisutility;
 import org.matsim.core.router.util.TravelTime;
-import org.sinfonica.inclusive_ccam.heterogenous_users.drt.FairInsertionCostCalculator;
-import org.sinfonica.inclusive_ccam.heterogenous_users.drt.UserSpecificStopTimeProvider;
 
 /**
  * @author Michal Maciejewski (michalm)
@@ -83,7 +81,8 @@ public class DrtModeOptimizerQSimModule extends AbstractDvrpModeQSimModule {
 						getter.getModal(DepotFinder.class), getter.getModal(RebalancingStrategy.class),
 						getter.getModal(DrtScheduleInquiry.class), getter.getModal(ScheduleTimingUpdater.class),
 						getter.getModal(EmptyVehicleRelocator.class), getter.getModal(UnplannedRequestInserter.class),
-						getter.getModal(DrtRequestInsertionRetryQueue.class));
+						getter.getModal(DrtRequestInsertionRetryQueue.class),
+						getter.getModal(PassengerStopDurationProvider.class));
 					}));
 
 		bindModal(DepotFinder.class).toProvider(
