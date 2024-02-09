@@ -6,11 +6,11 @@ import java.util.stream.Collectors;
 
 import org.matsim.alonso_mora.AlonsoMoraConfigGroup;
 import org.matsim.alonso_mora.AlonsoMoraConfigGroup.GlpkMpsAssignmentParameters;
-import org.matsim.alonso_mora.AlonsoMoraConfigGroup.GlpkMpsRelocationParameters;
 import org.matsim.alonso_mora.AlonsoMoraConfigGroup.MatrixEstimatorParameters;
 import org.matsim.alonso_mora.AlonsoMoraConfigGroup.SequenceGeneratorType;
 import org.matsim.alonso_mora.AlonsoMoraConfigurator;
 import org.matsim.alonso_mora.MultiModeAlonsoMoraConfigGroup;
+import org.matsim.alonso_mora.travel_time.MatrixTravelTimeEstimator;
 import org.matsim.api.core.v01.Scenario;
 import org.matsim.api.core.v01.network.Link;
 import org.matsim.api.core.v01.network.Network;
@@ -21,7 +21,6 @@ import org.matsim.contrib.drt.routing.DrtRoute;
 import org.matsim.contrib.drt.routing.DrtRouteFactory;
 import org.matsim.contrib.drt.run.MultiModeDrtConfigGroup;
 import org.matsim.contrib.drt.run.MultiModeDrtModule;
-import org.matsim.contrib.dvrp.path.VrpPaths;
 import org.matsim.contrib.dvrp.run.AbstractDvrpModeQSimModule;
 import org.matsim.contrib.dvrp.run.DvrpConfigGroup;
 import org.matsim.contrib.dvrp.run.DvrpModule;
@@ -32,9 +31,7 @@ import org.matsim.core.config.Config;
 import org.matsim.core.config.ConfigUtils;
 import org.matsim.core.config.groups.ReplanningConfigGroup.StrategySettings;
 import org.matsim.core.controler.Controler;
-import org.matsim.core.router.speedy.SpeedyALTFactory;
-import org.matsim.core.router.util.LeastCostPathCalculator;
-import org.matsim.core.router.util.TravelDisutility;
+import org.matsim.core.network.algorithms.NetworkSegmentDoubleLinks;
 import org.matsim.core.router.util.TravelTime;
 import org.matsim.core.scenario.ScenarioUtils;
 import org.sinfonica.inclusive_ccam.heterogenous_users.drt.UserSpecificStopTimeModule;
@@ -63,6 +60,7 @@ public class RunSimulation {
         settings.setStrategyName("KeepLastSelected");
         settings.setWeight(1.0);
         config.replanning().addStrategySettings(settings);
+        config.transit().setTransitScheduleFile(null);
 
         config.qsim().setFlowCapFactor(1e9);
         config.qsim().setStorageCapFactor(1e9);
@@ -77,6 +75,7 @@ public class RunSimulation {
         	item.vehiclesFile = "drt_vehicles_" + fleetSize + ".xml.gz";
         	item.addParameterSet(new PrebookingParams());
         	
+        	item.removeParameterSet(item.getRebalancingParams().get());
         	
         });
 
@@ -89,6 +88,8 @@ public class RunSimulation {
                 .map(e -> (Leg) e)
                 .filter(l -> drtModes.contains(l.getMode()))
                 .forEach(l -> l.setRoute(null));
+        
+        new NetworkSegmentDoubleLinks().run(scenario.getNetwork());
 
         double vulnerableProbability = commandLine.hasOption("vulnerable-probability") ? Double.parseDouble(commandLine.getOptionStrict("vulnerable-probability")): 0;
         double vulnerableTime = commandLine.hasOption("vulnerable-time") ? Double.parseDouble(commandLine.getOptionStrict("vulnerable-time")) : 120.0;
@@ -111,32 +112,22 @@ public class RunSimulation {
         drtModes.forEach(mode -> {
             controler.addOverridingModule(new UserSpecificStopTimeModule(mode));
         });
+        
+		drtModes.forEach(mode -> {
+			controler.addOverridingQSimModule(new AbstractDvrpModeQSimModule(mode) {
+				@Override
+				protected void configureQSim() {
+					bindModal(UserSpecificStopTimeProvider.class).to(UserSpecificStopTimeProvider.class);
+				}
+			});
+		});
 
-        drtModes.forEach(mode -> {
-            controler.addOverridingQSimModule(new AbstractDvrpModeQSimModule(mode) {
-                @Override
-                protected void configureQSim() {
-                    bindModal(UserSpecificStopTimeProvider.class).to(UserSpecificStopTimeProvider.class);
-                    
-                    bindModal(DetourTimeEstimator.class).toProvider(modalProvider(getter -> {
-                    	TravelTime travelTime = getter.getModal(TravelTime.class);
-                    	TravelDisutility travelDisutility = getter.getModal(TravelDisutility.class);
-                    	Network network = getter.getModal(Network.class);
-                    	
-                    	LeastCostPathCalculator router = new SpeedyALTFactory().createPathCalculator(network, travelDisutility, travelTime);
-                    
-                    	return new DetourTimeEstimator() {
-							
-							@Override
-							public double estimateTime(Link from, Link to, double departureTime) {
-								var path = VrpPaths.calcAndCreatePath(from, to, departureTime, router, travelTime);
-								return path.getTravelTime();
-							}
-						};
-                    }));
-                }
-            });
-        });
+        boolean useExactTravelTimesForDrt = true;
+        if (useExactTravelTimesForDrt) {
+			drtModes.forEach(mode -> {
+				controler.addOverridingQSimModule(new ExactDrtRoutingModule(mode));
+			});
+        }
         
         boolean useAlonsoMora = commandLine.getOption("use-alonso-mora").map(Boolean::parseBoolean).orElse(false);        
         if (useAlonsoMora) {
@@ -159,7 +150,7 @@ public class RunSimulation {
 			amConfig.congestionMitigation.preserveVehicleAssignments = true;
 
 			amConfig.rerouteDuringScheduling = false;
-			amConfig.checkDeterminsticTravelTimes = false; // TODO: Why doesn't it work?
+			amConfig.checkDeterminsticTravelTimes = false;
 			amConfig.sequenceGeneratorType = SequenceGeneratorType.Combined;
 			
 			amConfig.clearAssignmentSolver();
