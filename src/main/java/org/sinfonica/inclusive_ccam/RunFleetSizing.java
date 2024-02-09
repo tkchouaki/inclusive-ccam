@@ -2,6 +2,7 @@ package org.sinfonica.inclusive_ccam;
 
 import org.matsim.core.config.CommandLine;
 
+import java.io.IOException;
 import java.nio.file.Files;
 import java.nio.file.Path;
 import java.util.Locale;
@@ -24,8 +25,17 @@ public class RunFleetSizing {
 
             String outputDirectory = String.format("outputs_fleet_sizing/output_%s_%s_%d", probabilityString, timeString, fleetSize);
 
+            Path outputEventsFile = Path.of(outputDirectory, "output_events.xml.gz");
+
             if(Files.exists(Path.of(outputDirectory, "modestats.csv"))) {
                 System.out.println("Skipping simulation with outputDirectory " + outputDirectory);
+                if(Files.exists(outputEventsFile)) {
+                    try {
+                        Files.delete(outputEventsFile);
+                    } catch (IOException e) {
+                        System.out.println("Couldn't remove " + outputDirectory);
+                    }
+                }
                 continue;
             }
 
@@ -37,6 +47,12 @@ public class RunFleetSizing {
                     "--config:controler.lastIteration", "0",
                     "--config:multiModeDrt.drt[mode=drt].vehiclesFile", String.format("drt_vehicles_%d.xml.gz", fleetSize)
             });
+
+            try {
+                Files.delete(outputEventsFile);
+            } catch (IOException e) {
+                System.out.println("Couldn't remove " + outputDirectory);
+            }
         }
     }
 }
