@@ -14,6 +14,7 @@ import org.matsim.api.core.v01.Scenario;
 import org.matsim.api.core.v01.network.Link;
 import org.matsim.api.core.v01.network.Network;
 import org.matsim.api.core.v01.population.Leg;
+import org.matsim.contrib.drt.extension.insertion.DrtInsertionModule;
 import org.matsim.contrib.drt.optimizer.insertion.DetourTimeEstimator;
 import org.matsim.contrib.drt.prebooking.PrebookingParams;
 import org.matsim.contrib.drt.prebooking.logic.PersonBasedPrebookingLogic;
@@ -52,6 +53,7 @@ public class RunSimulation {
                 .allowOptions("fleet-size")
                 .allowOptions("use-alonso-mora")
                 .allowOptions("prebook-vulnerable", "prebooking-probability")
+                .allowOptions("minimize-passenger-delays")
                 .build();
 
         double prebookingProbability = commandLine.hasOption("prebooking-probability") ? Double.parseDouble(commandLine.getOptionStrict("prebooking-probability")) : -1;
@@ -158,8 +160,18 @@ public class RunSimulation {
                 }
             });
         });
-        
-        boolean useAlonsoMora = commandLine.getOption("use-alonso-mora").map(Boolean::parseBoolean).orElse(false);        
+
+        boolean useAlonsoMora = commandLine.getOption("use-alonso-mora").map(Boolean::parseBoolean).orElse(false);
+        boolean minimizePassengerDelays = commandLine.getOption("minimize-passenger-delays").map(Boolean::parseBoolean).orElse(false);
+
+        if(useAlonsoMora && minimizePassengerDelays) {
+            throw new IllegalStateException("Can't use both use-alonso-mora and minimize-passenger-delays");
+        }
+
+        if(minimizePassengerDelays) {
+            multiModeDrtConfigGroup.getModalElements().stream().map(drtConfigGroup -> new DrtInsertionModule(drtConfigGroup).minimizePassengerDelay(0.0, 1.0)).forEach(controler::addOverridingQSimModule);
+        }
+
         if (useAlonsoMora) {
 			config.qsim().setInsertingWaitingVehiclesBeforeDrivingVehicles(true);
 
