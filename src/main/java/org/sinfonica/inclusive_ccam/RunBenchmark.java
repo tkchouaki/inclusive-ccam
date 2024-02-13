@@ -6,6 +6,7 @@ import org.matsim.core.config.CommandLine;
 import java.io.IOException;
 import java.nio.file.Files;
 import java.nio.file.Path;
+import java.nio.file.Paths;
 import java.util.*;
 import java.util.concurrent.ExecutorService;
 import java.util.concurrent.Executors;
@@ -34,10 +35,11 @@ public class RunBenchmark {
         CommandLine commandLine = new CommandLine.Builder(args)
                 .requireOptions("config-path")
                 .allowOptions("parallel-sims")
+                .allowOptions("base-output-path")
                 .build();
 
         Set<Integer> fleetSizes = new HashSet<>(List.of(100, 200, 300, 400, 500, 600));
-        Set<Boolean> useAlonsoMoraValues = new HashSet<>(List.of(true, false));
+        Set<Boolean> useAlonsoMoraValues = new HashSet<>(List.of(false));
         Set<Double> vulnerableProbabilities = new HashSet<>(List.of(0.0, 0.1, 0.2, 0.3, 0.4, 0.5, 0.6, 0.7, 0.8, 0.9)); // 0.0, 0.1, 0.2, 0.3, 0.4, 0.5, 0.6, 0.7, 0.8, 0.9, 1.0};
         Set<Integer> vulnerableInteractionTimes = new HashSet<>(List.of(120, 240));
         Set<Integer> dispatchIntervals = new HashSet<>(List.of(1));
@@ -46,6 +48,8 @@ public class RunBenchmark {
         Set<Boolean> minimizePassengerDelayValues = new HashSet<>(List.of(false, true));
 
         Map<String, String[]> simulationTasks = new HashMap<>();
+
+        String baseOutputPath = commandLine.getOption("base-output-path").orElse("outputs");
 
         for (List params : Sets.cartesianProduct(fleetSizes, useAlonsoMoraValues, vulnerableProbabilities, vulnerableInteractionTimes, dispatchIntervals, prebookVulnerableUsersValues, prebookingShares, minimizePassengerDelayValues)) {
             int fleetSize = (int) params.get(0);
@@ -57,7 +61,7 @@ public class RunBenchmark {
             double prebookingShare = (double) params.get(6);
             boolean minimizePassengerDelay = ( (boolean) params.get(7) ) && !useAlonsoMora;
 
-            String outputDirectory = String.format("outputs/fs%s_vs%s_vt%s", fleetSize, probability,  probability > 0 ? vulnerableTime: "x");
+            String outputDirectory = Paths.get(baseOutputPath, String.format("fs%s_vs%s_vt%s", fleetSize, probability,  probability > 0 ? vulnerableTime: "x")).toString();
 
             if(useAlonsoMora) {
                 outputDirectory += "_am";
@@ -109,12 +113,6 @@ public class RunBenchmark {
             };
 
             simulationTasks.put(outputDirectory, simArgs);
-
-            try {
-                Files.delete(outputEventsFile);
-            } catch (IOException e) {
-                System.out.println("Couldn't remove " + outputDirectory);
-            }
         }
 
         int parallelSims = Integer.parseInt(commandLine.getOption("parallel-sims").orElse("1"));
