@@ -8,8 +8,8 @@ import java.nio.file.Files;
 import java.nio.file.Path;
 import java.nio.file.Paths;
 import java.util.*;
-import java.util.concurrent.ExecutorService;
-import java.util.concurrent.Executors;
+import java.util.concurrent.*;
+import java.util.stream.Collectors;
 
 public class RunBenchmark {
 
@@ -36,6 +36,7 @@ public class RunBenchmark {
                 .requireOptions("config-path")
                 .allowOptions("parallel-sims")
                 .allowOptions("base-output-path")
+                .allowOptions("no-sim")
                 .build();
 
         Set<Integer> fleetSizes = new HashSet<>(List.of(100, 200, 300, 400, 500, 600));
@@ -119,15 +120,27 @@ public class RunBenchmark {
 
         System.out.printf("About to perform %d simulations, with %d running in parallel\n", simulationTasks.size(), parallelSims);
 
+        boolean noSim = Boolean.parseBoolean(commandLine.getOption("no-sim").orElse("false"));
+
+        if(noSim) {
+            return;
+        }
+
         ExecutorService executor = Executors.newFixedThreadPool(parallelSims);
 
-        for(String[] simArgs: simulationTasks.values()) {
-            executor.execute(new SimTask(simArgs));
-        }
-        try {
-            executor.wait();
-        } catch (InterruptedException e) {
-            throw new RuntimeException(e);
+        List<Future> futures = simulationTasks.values().stream().map(SimTask::new).map(executor::submit).collect(Collectors.toList());
+
+        while(!executor.isTerminated()) {
+            for(Future future: futures) {
+                try {
+                    future.get(1, TimeUnit.MICROSECONDS);
+                } catch (InterruptedException | ExecutionException e) {
+                    executor.shutdownNow();
+                    throw new RuntimeException(e);
+                } catch (TimeoutException e) {
+
+                }
+            }
         }
 
         for(String outputDirectory: simulationTasks.keySet()) {
