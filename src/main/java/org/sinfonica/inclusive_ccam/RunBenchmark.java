@@ -40,7 +40,7 @@ public class RunBenchmark {
                 .build();
 
         Set<Integer> fleetSizes = new HashSet<>(List.of(100, 200, 300, 400, 500, 600));
-        Set<Boolean> useAlonsoMoraValues = new HashSet<>(List.of(false));
+        Set<Boolean> useAlonsoMoraValues = new HashSet<>(List.of(true));
         Set<Double> vulnerableProbabilities = new HashSet<>(List.of(0.0, 0.1, 0.2, 0.3, 0.4, 0.5, 0.6, 0.7, 0.8, 0.9)); // 0.0, 0.1, 0.2, 0.3, 0.4, 0.5, 0.6, 0.7, 0.8, 0.9, 1.0};
         Set<Integer> vulnerableInteractionTimes = new HashSet<>(List.of(120, 240));
         Set<Integer> dispatchIntervals = new HashSet<>(List.of(1));
@@ -128,7 +128,10 @@ public class RunBenchmark {
 
         ExecutorService executor = Executors.newFixedThreadPool(parallelSims);
 
-        List<Future> futures = simulationTasks.values().stream().map(SimTask::new).map(executor::submit).collect(Collectors.toList());
+        List<String[]> tasks = new ArrayList<>(simulationTasks.values());
+        Collections.shuffle(tasks);
+
+        List<Future> futures = tasks.stream().map(SimTask::new).map(executor::submit).collect(Collectors.toList());
 
         while(!executor.isTerminated()) {
             for(Future future: futures) {
