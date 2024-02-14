@@ -10,11 +10,11 @@ import org.matsim.alonso_mora.AlonsoMoraConfigGroup.MatrixEstimatorParameters;
 import org.matsim.alonso_mora.AlonsoMoraConfigGroup.SequenceGeneratorType;
 import org.matsim.alonso_mora.AlonsoMoraConfigurator;
 import org.matsim.alonso_mora.MultiModeAlonsoMoraConfigGroup;
-import org.matsim.alonso_mora.travel_time.MatrixTravelTimeEstimator;
 import org.matsim.api.core.v01.Scenario;
 import org.matsim.api.core.v01.network.Link;
 import org.matsim.api.core.v01.network.Network;
 import org.matsim.api.core.v01.population.Leg;
+import org.matsim.contrib.drt.extension.insertion.DrtInsertionModule;
 import org.matsim.contrib.drt.optimizer.insertion.DetourTimeEstimator;
 import org.matsim.contrib.drt.prebooking.PrebookingParams;
 import org.matsim.contrib.drt.prebooking.logic.PersonBasedPrebookingLogic;
@@ -22,6 +22,7 @@ import org.matsim.contrib.drt.routing.DrtRoute;
 import org.matsim.contrib.drt.routing.DrtRouteFactory;
 import org.matsim.contrib.drt.run.MultiModeDrtConfigGroup;
 import org.matsim.contrib.drt.run.MultiModeDrtModule;
+import org.matsim.contrib.dvrp.path.VrpPaths;
 import org.matsim.contrib.dvrp.run.AbstractDvrpModeQSimModule;
 import org.matsim.contrib.dvrp.run.DvrpConfigGroup;
 import org.matsim.contrib.dvrp.run.DvrpModule;
@@ -33,6 +34,9 @@ import org.matsim.core.config.ConfigUtils;
 import org.matsim.core.config.groups.ReplanningConfigGroup.StrategySettings;
 import org.matsim.core.controler.Controler;
 import org.matsim.core.network.algorithms.NetworkSegmentDoubleLinks;
+import org.matsim.core.router.speedy.SpeedyALTFactory;
+import org.matsim.core.router.util.LeastCostPathCalculator;
+import org.matsim.core.router.util.TravelDisutility;
 import org.matsim.core.router.util.TravelTime;
 import org.matsim.core.scenario.ScenarioUtils;
 import org.sinfonica.inclusive_ccam.heterogenous_users.drt.UserSpecificStopTimeModule;
@@ -50,6 +54,7 @@ public class RunSimulation {
                 .allowOptions("fleet-size")
                 .allowOptions("use-alonso-mora")
                 .allowOptions("prebook-vulnerable", "prebooking-probability")
+                .allowOptions("minimize-passenger-delays")
                 .build();
 
         double prebookingProbability = commandLine.hasOption("prebooking-probability") ? Double.parseDouble(commandLine.getOptionStrict("prebooking-probability")) : -1;
@@ -148,7 +153,43 @@ public class RunSimulation {
 			});
         }
         
-        boolean useAlonsoMora = commandLine.getOption("use-alonso-mora").map(Boolean::parseBoolean).orElse(false);        
+        drtModes.forEach(mode -> {
+            controler.addOverridingQSimModule(new AbstractDvrpModeQSimModule(mode) {
+                @Override
+                protected void configureQSim() {
+                    bindModal(UserSpecificStopTimeProvider.class).to(UserSpecificStopTimeProvider.class);
+                    
+                    bindModal(DetourTimeEstimator.class).toProvider(modalProvider(getter -> {
+                    	TravelTime travelTime = getter.getModal(TravelTime.class);
+                    	TravelDisutility travelDisutility = getter.getModal(TravelDisutility.class);
+                    	Network network = getter.getModal(Network.class);
+                    	
+                    	LeastCostPathCalculator router = new SpeedyALTFactory().createPathCalculator(network, travelDisutility, travelTime);
+                    
+                    	return new DetourTimeEstimator() {
+							
+							@Override
+							public double estimateTime(Link from, Link to, double departureTime) {
+								var path = VrpPaths.calcAndCreatePath(from, to, departureTime, router, travelTime);
+								return path.getTravelTime();
+							}
+						};
+                    }));
+                }
+            });
+        });
+
+        boolean useAlonsoMora = commandLine.getOption("use-alonso-mora").map(Boolean::parseBoolean).orElse(false);
+        boolean minimizePassengerDelays = commandLine.getOption("minimize-passenger-delays").map(Boolean::parseBoolean).orElse(false);
+
+        if(useAlonsoMora && minimizePassengerDelays) {
+            throw new IllegalStateException("Can't use both use-alonso-mora and minimize-passenger-delays");
+        }
+
+        if(minimizePassengerDelays) {
+            multiModeDrtConfigGroup.getModalElements().stream().map(drtConfigGroup -> new DrtInsertionModule(drtConfigGroup).minimizePassengerDelay(0.0, 1.0)).forEach(controler::addOverridingQSimModule);
+        }
+
         if (useAlonsoMora) {
 			config.qsim().setInsertingWaitingVehiclesBeforeDrivingVehicles(true);
 
