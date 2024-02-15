@@ -33,6 +33,7 @@ import org.matsim.core.config.Config;
 import org.matsim.core.config.ConfigUtils;
 import org.matsim.core.config.groups.ReplanningConfigGroup.StrategySettings;
 import org.matsim.core.controler.Controler;
+import org.matsim.core.network.algorithms.NetworkSegmentDoubleLinks;
 import org.matsim.core.router.speedy.SpeedyALTFactory;
 import org.matsim.core.router.util.LeastCostPathCalculator;
 import org.matsim.core.router.util.TravelDisutility;
@@ -73,6 +74,7 @@ public class RunSimulation {
         settings.setStrategyName("KeepLastSelected");
         settings.setWeight(1.0);
         config.replanning().addStrategySettings(settings);
+        config.transit().setTransitScheduleFile(null);
 
         config.qsim().setFlowCapFactor(1e9);
         config.qsim().setStorageCapFactor(1e9);
@@ -86,8 +88,6 @@ public class RunSimulation {
         multiModeDrtConfigGroup.getModalElements().forEach(item -> {
         	item.vehiclesFile = "drt_vehicles_" + fleetSize + ".xml.gz";
         	item.addParameterSet(new PrebookingParams());
-        	
-        	
         });
 
         Scenario scenario = ScenarioUtils.createScenario(config);
@@ -99,10 +99,12 @@ public class RunSimulation {
                 .map(e -> (Leg) e)
                 .filter(l -> drtModes.contains(l.getMode()))
                 .forEach(l -> l.setRoute(null));
+        
+        // avoid two links connecting the same nodes
+        new NetworkSegmentDoubleLinks().run(scenario.getNetwork());
 
         double vulnerableProbability = commandLine.hasOption("vulnerable-probability") ? Double.parseDouble(commandLine.getOptionStrict("vulnerable-probability")): 0;
         double vulnerableTime = commandLine.hasOption("vulnerable-time") ? Double.parseDouble(commandLine.getOptionStrict("vulnerable-time")) : 120.0;
-
 
         Random random = new Random(randomSeed);
         scenario.getPopulation().getPersons().values().forEach(p -> {
@@ -134,7 +136,23 @@ public class RunSimulation {
         drtModes.forEach(mode -> {
             controler.addOverridingModule(new UserSpecificStopTimeModule(mode));
         });
+        
+		drtModes.forEach(mode -> {
+			controler.addOverridingQSimModule(new AbstractDvrpModeQSimModule(mode) {
+				@Override
+				protected void configureQSim() {
+					bindModal(UserSpecificStopTimeProvider.class).to(UserSpecificStopTimeProvider.class);
+				}
+			});
+		});
 
+        boolean useExactTravelTimesForDrt = true;
+        if (useExactTravelTimesForDrt) {
+			drtModes.forEach(mode -> {
+				controler.addOverridingQSimModule(new ExactDrtRoutingModule(mode));
+			});
+        }
+        
         drtModes.forEach(mode -> {
             controler.addOverridingQSimModule(new AbstractDvrpModeQSimModule(mode) {
                 @Override
@@ -192,7 +210,7 @@ public class RunSimulation {
 			amConfig.congestionMitigation.preserveVehicleAssignments = true;
 
 			amConfig.rerouteDuringScheduling = false;
-			amConfig.checkDeterminsticTravelTimes = false; // TODO: Why doesn't it work?
+			amConfig.checkDeterminsticTravelTimes = false;
 			amConfig.sequenceGeneratorType = SequenceGeneratorType.Combined;
 			
 			amConfig.clearAssignmentSolver();
@@ -202,8 +220,7 @@ public class RunSimulation {
 			GlpkMpsAssignmentParameters assignmentParameters = new GlpkMpsAssignmentParameters();
 			amConfig.addParameterSet(assignmentParameters);
 
-			/*GlpkMpsRelocationParameters relocationParameters = new GlpkMpsRelocationParameters();
-			amConfig.addParameterSet(relocationParameters);*/
+			// disable AM in-house relocation
 			amConfig.relocationInterval = 0;
 
 			MatrixEstimatorParameters estimator = new MatrixEstimatorParameters();
