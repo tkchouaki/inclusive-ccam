@@ -34,6 +34,7 @@ import org.matsim.core.config.ConfigUtils;
 import org.matsim.core.config.groups.ReplanningConfigGroup.StrategySettings;
 import org.matsim.core.controler.Controler;
 import org.matsim.core.network.algorithms.NetworkSegmentDoubleLinks;
+import org.matsim.core.router.costcalculators.OnlyTimeDependentTravelDisutility;
 import org.matsim.core.router.speedy.SpeedyALTFactory;
 import org.matsim.core.router.util.LeastCostPathCalculator;
 import org.matsim.core.router.util.TravelDisutility;
@@ -152,32 +153,6 @@ public class RunSimulation {
 				controler.addOverridingQSimModule(new ExactDrtRoutingModule(mode));
 			});
         }
-        
-        drtModes.forEach(mode -> {
-            controler.addOverridingQSimModule(new AbstractDvrpModeQSimModule(mode) {
-                @Override
-                protected void configureQSim() {
-                    bindModal(UserSpecificStopTimeProvider.class).to(UserSpecificStopTimeProvider.class);
-                    
-                    bindModal(DetourTimeEstimator.class).toProvider(modalProvider(getter -> {
-                    	TravelTime travelTime = getter.getModal(TravelTime.class);
-                    	TravelDisutility travelDisutility = getter.getModal(TravelDisutility.class);
-                    	Network network = getter.getModal(Network.class);
-                    	
-                    	LeastCostPathCalculator router = new SpeedyALTFactory().createPathCalculator(network, travelDisutility, travelTime);
-                    
-                    	return new DetourTimeEstimator() {
-							
-							@Override
-							public double estimateTime(Link from, Link to, double departureTime) {
-								var path = VrpPaths.calcAndCreatePath(from, to, departureTime, router, travelTime);
-								return path.getTravelTime();
-							}
-						};
-                    }));
-                }
-            });
-        });
 
         boolean useAlonsoMora = commandLine.getOption("use-alonso-mora").map(Boolean::parseBoolean).orElse(false);
         boolean minimizePassengerDelays = commandLine.getOption("minimize-passenger-delays").map(Boolean::parseBoolean).orElse(false);
