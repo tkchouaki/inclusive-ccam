@@ -53,7 +53,7 @@ public class RunSimulation {
         boolean prebookVulnerable = commandLine.hasOption("prebook-vulnerable") && Boolean.parseBoolean(commandLine.getOptionStrict("prebook-vulnerable"));
 
         if(prebookingProbability > 0 && prebookVulnerable) {
-            throw new IllegalStateException("'prebook-vulnerable' and 'prebooking-probability' arguments cannot be used at once");
+            throw new IllegalStateException("'prebook-vulnerable' and 'prebooking-probability' arguments cannot be used at once. Supplied prebook-vulnerable = %b and prebooking-probability = %f".formatted(prebookVulnerable, prebookingProbability));
         }
 
         String configPath = commandLine.getOptionStrict("config-path");
