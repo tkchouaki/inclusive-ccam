@@ -3,6 +3,7 @@ package org.sinfonica.inclusive_ccam;
 import com.google.common.collect.Sets;
 import org.matsim.core.config.CommandLine;
 
+import java.io.File;
 import java.io.IOException;
 import java.nio.file.Files;
 import java.nio.file.Path;
@@ -40,7 +41,7 @@ public class RunBenchmark {
                 .build();
 
         Set<Integer> fleetSizes = new HashSet<>(List.of(100, 150, 200, 250, 300, 350, 400, 450, 500, 550, 600));
-        Set<Boolean> useAlonsoMoraValues = new HashSet<>(List.of(false));
+        Set<Boolean> useAlonsoMoraValues = new HashSet<>(List.of(true));
         Set<Double> vulnerableProbabilities = new HashSet<>(List.of(0.0, 0.1, 0.2, 0.3, 0.4, 0.5, 0.6, 0.7, 0.8, 0.9, 1.0));
         Set<Integer> vulnerableInteractionTimes = new HashSet<>(List.of(120, 240));
         Set<Integer> dispatchIntervals = new HashSet<>(List.of(1));
@@ -130,23 +131,50 @@ public class RunBenchmark {
             return;
         }
 
-        ExecutorService executor = Executors.newFixedThreadPool(parallelSims);
+        String javaHome = System.getProperty("java.home");
+        String javaBin = javaHome + File.separator + "bin" + File.separator + "java";
+        String classpath = System.getProperty("java.class.path");
+        String className = RunSimulation.class.getName();
 
-        List<String[]> tasks = new ArrayList<>(simulationTasks.values());
-        Collections.shuffle(tasks);
+        List<ProcessBuilder> processBuilders = new ArrayList<>();
+        Process[] runningProcesses = new Process[parallelSims];
 
-        List<Future> futures = tasks.stream().map(SimTask::new).map(executor::submit).collect(Collectors.toList());
+        for(String[] simArgs: simulationTasks.values()) {
+            List<String> command = new ArrayList<>();
+            command.add(javaBin);
+            command.add("-cp");
+            command.add(classpath);
+            command.add(className);
+            command.addAll(Arrays.stream(simArgs).toList());
+            ProcessBuilder processBuilder = new ProcessBuilder(command).inheritIO();
+            processBuilders.add(processBuilder);
+        }
 
-        while(!executor.isTerminated()) {
-            for(Future future: futures) {
-                try {
-                    future.get(1, TimeUnit.MICROSECONDS);
-                } catch (InterruptedException | ExecutionException e) {
-                    executor.shutdownNow();
-                    throw new RuntimeException(e);
-                } catch (TimeoutException e) {
-
+        boolean running = true;
+        while(running) {
+            for(int i=0;i<parallelSims;i++) {
+                if(runningProcesses[i]==null) {
+                    if(processBuilders.size() == 0) {
+                        running = false;
+                        break;
+                    }
+                    try {
+                        runningProcesses[i] = processBuilders.remove(0).start();
+                    } catch (IOException e) {
+                        throw new RuntimeException(e);
+                    }
+                } else if(!runningProcesses[i].isAlive()) {
+                    if(runningProcesses[i].exitValue() != 0) {
+                        running = false;
+                    }
+                    runningProcesses[i] = null;
                 }
+            }
+        }
+
+        for(int i=0; i<parallelSims; i++) {
+            if(runningProcesses[i] != null && runningProcesses[i].isAlive()) {
+                runningProcesses[i].destroyForcibly();
             }
         }
 
