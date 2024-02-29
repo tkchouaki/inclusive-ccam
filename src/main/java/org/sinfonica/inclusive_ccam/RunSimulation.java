@@ -4,26 +4,27 @@ import java.util.Random;
 import java.util.Set;
 import java.util.stream.Collectors;
 
+import com.google.inject.Provider;
 import org.matsim.alonso_mora.AlonsoMoraConfigGroup;
 import org.matsim.alonso_mora.AlonsoMoraConfigGroup.GlpkMpsAssignmentParameters;
 import org.matsim.alonso_mora.AlonsoMoraConfigGroup.MatrixEstimatorParameters;
 import org.matsim.alonso_mora.AlonsoMoraConfigGroup.SequenceGeneratorType;
 import org.matsim.alonso_mora.AlonsoMoraConfigurator;
 import org.matsim.alonso_mora.MultiModeAlonsoMoraConfigGroup;
+import org.matsim.alonso_mora.algorithm.assignment.AssignmentSolver;
 import org.matsim.api.core.v01.Scenario;
 import org.matsim.api.core.v01.population.Leg;
+import org.matsim.api.core.v01.population.Population;
 import org.matsim.contrib.drt.extension.insertion.DrtInsertionModule;
 import org.matsim.contrib.drt.prebooking.PrebookingParams;
 import org.matsim.contrib.drt.prebooking.logic.PersonBasedPrebookingLogic;
 import org.matsim.contrib.drt.routing.DrtRoute;
 import org.matsim.contrib.drt.routing.DrtRouteFactory;
+import org.matsim.contrib.drt.run.DrtModeModule;
 import org.matsim.contrib.drt.run.MultiModeDrtConfigGroup;
 import org.matsim.contrib.drt.run.MultiModeDrtModule;
-import org.matsim.contrib.dvrp.run.AbstractDvrpModeQSimModule;
-import org.matsim.contrib.dvrp.run.DvrpConfigGroup;
-import org.matsim.contrib.dvrp.run.DvrpModule;
-import org.matsim.contrib.dvrp.run.DvrpQSimComponents;
-import org.matsim.contrib.dvrp.run.MultiModal;
+import org.matsim.contrib.drt.stops.PassengerStopDurationProvider;
+import org.matsim.contrib.dvrp.run.*;
 import org.matsim.core.config.CommandLine;
 import org.matsim.core.config.Config;
 import org.matsim.core.config.ConfigUtils;
@@ -31,6 +32,7 @@ import org.matsim.core.config.groups.ReplanningConfigGroup.StrategySettings;
 import org.matsim.core.controler.Controler;
 import org.matsim.core.network.algorithms.NetworkSegmentDoubleLinks;
 import org.matsim.core.scenario.ScenarioUtils;
+import org.sinfonica.inclusive_ccam.heterogenous_users.drt.InclusiveRejectionPenalty;
 import org.sinfonica.inclusive_ccam.heterogenous_users.drt.UserSpecificStopTimeModule;
 import org.sinfonica.inclusive_ccam.heterogenous_users.drt.UserSpecificStopTimeProvider;
 
@@ -47,6 +49,8 @@ public class RunSimulation {
                 .allowOptions("use-alonso-mora")
                 .allowOptions("prebook-vulnerable", "prebooking-probability")
                 .allowOptions("minimize-passenger-delays")
+                .allowOptions("am-inclusive-penalty")
+                .allowOptions("am-weight-alpha")
                 .build();
 
         double prebookingProbability = commandLine.hasOption("prebooking-probability") ? Double.parseDouble(commandLine.getOptionStrict("prebooking-probability")) : -1;
@@ -55,6 +59,25 @@ public class RunSimulation {
         if(prebookingProbability > 0 && prebookVulnerable) {
             throw new IllegalStateException("'prebook-vulnerable' and 'prebooking-probability' arguments cannot be used at once. Supplied prebook-vulnerable = %b and prebooking-probability = %f".formatted(prebookVulnerable, prebookingProbability));
         }
+
+        boolean useAlonsoMora = commandLine.getOption("use-alonso-mora").map(Boolean::parseBoolean).orElse(false);
+        boolean minimizePassengerDelays = commandLine.getOption("minimize-passenger-delays").map(Boolean::parseBoolean).orElse(false);
+
+        if(useAlonsoMora && minimizePassengerDelays) {
+            throw new IllegalStateException("Can't use both use-alonso-mora and minimize-passenger-delays");
+        }
+
+        boolean inclusivePenalty = commandLine.getOption("am-inclusive-penalty").map(Boolean::parseBoolean).orElse(false);
+
+        if(!useAlonsoMora && inclusivePenalty) {
+            throw new IllegalStateException("'am-inclusive-penalty' can be used only if 'use-alonso' mora is set to true");
+        }
+
+        if(commandLine.hasOption("am-weight-alpha") && !useAlonsoMora) {
+            throw new IllegalStateException("'am-weight-alpha' can be used only if 'use-alonso' mora is set to true");
+        }
+
+        double alonsoMoraWeightAlpha = commandLine.getOption("am-weight-alpha").map(Double::parseDouble).orElse(1.0);
 
         String configPath = commandLine.getOptionStrict("config-path");
         Integer randomSeed = commandLine.hasOption("random-seed") ? Integer.parseInt(commandLine.getOptionStrict("random-seed")) : 1234;
@@ -145,13 +168,6 @@ public class RunSimulation {
 			});
         }
 
-        boolean useAlonsoMora = commandLine.getOption("use-alonso-mora").map(Boolean::parseBoolean).orElse(false);
-        boolean minimizePassengerDelays = commandLine.getOption("minimize-passenger-delays").map(Boolean::parseBoolean).orElse(false);
-
-        if(useAlonsoMora && minimizePassengerDelays) {
-            throw new IllegalStateException("Can't use both use-alonso-mora and minimize-passenger-delays");
-        }
-
         if(minimizePassengerDelays) {
             multiModeDrtConfigGroup.getModalElements().stream().map(drtConfigGroup -> new DrtInsertionModule(drtConfigGroup).minimizePassengerDelay(0.0, 1.0)).forEach(controler::addOverridingQSimModule);
         }
@@ -193,6 +209,21 @@ public class RunSimulation {
 			amConfig.addParameterSet(estimator);
 
 			AlonsoMoraConfigurator.configure(controler, amConfig.mode);
+
+            if(inclusivePenalty) {
+                drtModes.forEach(drtMode -> {
+                    controler.addOverridingQSimModule(new AbstractDvrpModeQSimModule(drtMode) {
+                        @Override
+                        public void configureQSim() {
+                            bindModal(AssignmentSolver.RejectionPenalty.class).toProvider(modalProvider(getter -> {
+                                PassengerStopDurationProvider stopDurationProvider = getter.getModal(PassengerStopDurationProvider.class);
+                                Population population = getter.get(Population.class);
+                                return new InclusiveRejectionPenalty(population, amConfig.unassignmentPenalty, amConfig.rejectionPenalty, stopDurationProvider, alonsoMoraWeightAlpha);
+                            }));
+                        }
+                    });
+                });
+            }
 		}
 
         multiModeDrtConfigGroup.getModalElements().forEach(drtConfigGroup -> PersonBasedPrebookingLogic.install(controler, drtConfigGroup, 4*3600));

@@ -40,20 +40,26 @@ public class RunBenchmark {
                 .allowOptions("no-sim")
                 .build();
 
-        Set<Integer> fleetSizes = new HashSet<>(List.of(100, 150, 200, 250, 300, 350, 400, 450, 500, 550, 600));
+        Set<Integer> fleetSizes = new HashSet<>(List.of(100, 150, 200, 250, 300, 350, 400, 450));
         Set<Boolean> useAlonsoMoraValues = new HashSet<>(List.of(true));
-        Set<Double> vulnerableProbabilities = new HashSet<>(List.of(0.0, 0.1, 0.2, 0.3, 0.4, 0.5, 0.6, 0.7, 0.8, 0.9, 1.0));
+        Set<Double> vulnerableProbabilities = new HashSet<>(List.of(0.1, 0.2, 0.3, 0.4, 0.5, 0.6, 0.7, 0.8, 0.9));
         Set<Integer> vulnerableInteractionTimes = new HashSet<>(List.of(120, 240));
         Set<Integer> dispatchIntervals = new HashSet<>(List.of(1));
-        Set<Boolean> prebookVulnerableUsersValues = new HashSet<>(List.of(true, false));
-        Set<Double> prebookingShares = new HashSet<>(List.of(0.0, 0.1, 0.2, 0.3, 0.4, 0.5, 0.6, 0.7, 0.8, 0.9, 1.0));
+        Set<Boolean> prebookVulnerableUsersValues = new HashSet<>(List.of(false));
+        Set<Double> prebookingShares = new HashSet<>(List.of(0.0));
         Set<Boolean> minimizePassengerDelayValues = new HashSet<>(List.of(false, true));
+        Set<Boolean> alonsoMoraInclusivePenaltyValues = new HashSet<>(List.of(false, true));
+        Set<Double> alonsoMoraWeightFactorValues = new HashSet<>();
+        for(double weightFactor=100.0; weightFactor<2000.0; weightFactor+=100) {
+            alonsoMoraWeightFactorValues.add(weightFactor);
+        }
+        alonsoMoraWeightFactorValues.add(1.0);
 
         Map<String, String[]> simulationTasks = new HashMap<>();
 
         String baseOutputPath = commandLine.getOption("base-output-path").orElse("outputs");
 
-        for (List params : Sets.cartesianProduct(fleetSizes, useAlonsoMoraValues, vulnerableProbabilities, vulnerableInteractionTimes, dispatchIntervals, prebookVulnerableUsersValues, prebookingShares, minimizePassengerDelayValues)) {
+        for (List params : Sets.cartesianProduct(fleetSizes, useAlonsoMoraValues, vulnerableProbabilities, vulnerableInteractionTimes, dispatchIntervals, prebookVulnerableUsersValues, prebookingShares, minimizePassengerDelayValues, alonsoMoraInclusivePenaltyValues, alonsoMoraWeightFactorValues)) {
             int fleetSize = (int) params.get(0);
             boolean useAlonsoMora = (boolean) params.get(1);
             double vulnerableProbability = (double) params.get(2);
@@ -62,6 +68,11 @@ public class RunBenchmark {
             boolean prebookingVulnerableUsers = (boolean) params.get(5);
             double prebookingShare = (double) params.get(6);
             boolean minimizePassengerDelay = ( (boolean) params.get(7) ) && !useAlonsoMora;
+            boolean alonsoMoraInclusivePenalty = ((boolean) params.get(8)) && useAlonsoMora;
+            double alonsoMoraWeightFactor = (double) params.get(9);
+
+            //The name of the output dir should look like
+            //fs100_vs0.0_vtx_am_dix_pvx_ps0.0_pwf0.1
 
             String outputDirectory = Paths.get(baseOutputPath, String.format("fs%s_vs%s_vt%s", fleetSize, vulnerableProbability,  vulnerableProbability > 0 ? vulnerableTime: "x")).toString();
 
@@ -74,7 +85,6 @@ public class RunBenchmark {
                     outputDirectory += "_drt";
                 }
             }
-
             // Dispatch interval is only relevant with DRT, so no need to perform all the simulations with am with various dispatch intervals
             outputDirectory += String.format("_di%s", useAlonsoMora ? "x" : dispatchInterval);
 
@@ -89,6 +99,11 @@ public class RunBenchmark {
                 prebookingVulnerableUsers = false;
             }
 
+            if(alonsoMoraInclusivePenalty) {
+                outputDirectory += String.format("_pwf%s", alonsoMoraWeightFactor);
+            } else {
+                outputDirectory += "_pwfx";
+            }
 
             Path outputEventsFile = Path.of(outputDirectory, "output_events.xml.gz");
 
@@ -115,7 +130,9 @@ public class RunBenchmark {
                     "--prebook-vulnerable", String.valueOf(prebookingVulnerableUsers),
                     "--prebooking-probability", String.valueOf(prebookingShare),
                     "--minimize-passenger-delays", String.valueOf(minimizePassengerDelay),
-                    "--config:multiModeDrt.drt[mode=drt].dispatchInterval", String.valueOf(dispatchInterval)
+                    "--config:multiModeDrt.drt[mode=drt].dispatchInterval", String.valueOf(dispatchInterval),
+                    "--am-inclusive-penalty", String.valueOf(alonsoMoraInclusivePenalty),
+                    "--am-weight-alpha", String.valueOf(alonsoMoraWeightFactor)
             };
 
             simulationTasks.put(outputDirectory, simArgs);
@@ -152,22 +169,26 @@ public class RunBenchmark {
 
         boolean running = true;
         while(running) {
+            running = false;
             for(int i=0;i<parallelSims;i++) {
                 if(runningProcesses[i]==null) {
                     if(processBuilders.size() == 0) {
-                        running = false;
-                        break;
+                        continue;
                     }
                     try {
                         runningProcesses[i] = processBuilders.remove(0).start();
+                        running = true;
                     } catch (IOException e) {
                         throw new RuntimeException(e);
                     }
                 } else if(!runningProcesses[i].isAlive()) {
                     if(runningProcesses[i].exitValue() != 0) {
                         running = false;
+                        break;
                     }
                     runningProcesses[i] = null;
+                } else {
+                    running = true;
                 }
             }
         }
